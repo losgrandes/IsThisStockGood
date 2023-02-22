@@ -29,9 +29,10 @@ class StockRowKeyStats:
     self.ticker_symbol = _temporary_ticker_mapping(ticker_symbol)
     self.key_stat_url = self.STOCKROW_KEY_STATS_URL.format(self.ticker_symbol)
     self.roic = []  # Return on invested capital
-    self.roic_averages = []
+    self.roic_average_growth_rates = []
     self.equity = []  # Equity or BVPS (book value per share)
     self.equity_growth_rates = []
+    self.latest_equity_growth_rate = None
     self.free_cash_flow = []  # Free Cash Flow
     self.free_cash_flow_growth_rates = []
     self.revenue_growth_rates = []  # Revenue
@@ -40,7 +41,9 @@ class StockRowKeyStats:
     self.total_debt = 0
     self.recent_free_cash_flow = 0
     self.debt_payoff_time = 0
-    self.debt_equity_ratio = -1
+    self.debt_equity_ratio = None
+    self.pe_high = None
+    self.pe_low = None
 
   def parse_json_data(self, data):
     try:
@@ -56,11 +59,14 @@ class StockRowKeyStats:
       sparklines = capital_structures.get("sparklines", [])
       _add_list_of_dicts_to_dict(sparklines, data_dict, "label")
 
+      quarterly_data = json_data.get("quarterly_data", [])
+      _add_list_of_dicts_to_dict(quarterly_data, data_dict, "indicator")
+
       self.roic = _get_nested_values_for_key(data_dict, "ROIC")
       # Convert from decimal to percent
       self.roic = [self.roic[i] * 100 for i in range(0, len(self.roic))]
-      self.roic_averages = _compute_averages_for_data(self.roic)
-      if not self.roic_averages:
+      self.roic_average_growth_rates = _compute_averages_for_data(self.roic)
+      if not self.roic_average_growth_rates:
         logging.error('Failed to parse ROIC')
 
       revenue = _get_nested_values_for_key(data_dict, "Revenue")
@@ -74,15 +80,14 @@ class StockRowKeyStats:
         logging.error('Failed to parse EPS growth rates')
 
       debt_equity = _get_nested_value_for_key(data_dict, "Debt to Equity (Q)")
-      if not debt_equity:
-        logging.error('Failed to parse Debt-to-Equity ratio.')
-      else:
+      if debt_equity:
         self.debt_equity_ratio = debt_equity
 
       self.equity = _get_nested_values_for_key(data_dict, "Book Value/Sh")
       self.equity_growth_rates = compute_growth_rates_for_data(self.equity)
       if not self.equity:
         logging.error('Failed to parse BVPS.')
+      self.max_equity_growth_rate = self.equity_growth_rates[-1]
 
       self.free_cash_flow = _get_nested_values_for_key(data_dict, "FCF")
       self.free_cash_flow_growth_rates = compute_growth_rates_for_data(self.free_cash_flow)
@@ -97,8 +102,13 @@ class StockRowKeyStats:
       
       total_debts = _get_nested_values_for_key(data_dict, "Total Debt") # Already in USD millions
       self.calculate_total_debt(total_debts)
+      self.ttm_eps = self.calculate_ttm_eps(data_dict.get('EPSD:A', {}).get('years', []))
+      pe_ratios = _get_nested_values_for_key(data_dict, "PE Ratio")
+      self.pe_high = max(pe_ratios, default=0)
+      self.pe_low = max(pe_ratios, default=0)
     except Exception as e:
-      logging.error(traceback.format_exc())
+      logging.error("Couldn't parse StockRow data")
+      logging.debug(traceback.format_exc())
       return False
     return True
 
@@ -111,6 +121,18 @@ class StockRowKeyStats:
     else:
       self.total_debt = total_debts[-1]  # Data already in USD millions
       self.debt_payoff_time = self.total_debt / self.recent_free_cash_flow
+
+  def calculate_ttm_eps(self, years):
+    ttm_eps = 0
+    quarters_count = 0
+    for year in years:
+      for quarterly_eps in reversed(year.get('values', [])[0:4]):
+        if quarters_count > 3:
+          break
+        if isinstance(quarterly_eps, float):
+          ttm_eps += quarterly_eps
+          quarters_count += 1
+    return ttm_eps
 
 
 def _add_list_of_dicts_to_dict(list_of_dicts, target_dict, key_name):

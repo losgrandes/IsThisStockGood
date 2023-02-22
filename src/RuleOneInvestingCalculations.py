@@ -2,8 +2,7 @@
 
 from __future__ import division
 import math
-#import numpy as np
-
+import logging
 
 def compound_annual_growth_rate(start_balance, end_balance, years):
   """
@@ -135,6 +134,7 @@ def margin_of_safety_price(current_eps, estimated_growth_rate,
   future_pe = calculate_future_pe(estimated_growth_rate, historical_low_pe,
                                   historical_high_pe)
   future_price = calculate_estimated_future_price(future_eps, future_pe)
+  logging.debug(f'FutureEPS {future_eps} Future PE {future_pe} Future Price {future_price}')
   sticker_price = calculate_sticker_price(future_price)
   margin_of_safety = calculate_margin_of_safety(sticker_price)
   return margin_of_safety, sticker_price

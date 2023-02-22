@@ -3,7 +3,17 @@ import json
 import logging
 import re
 from lxml import html
+import src.RuleOneInvestingCalculations as RuleOne
 
+class YahooAutocomplete:
+  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v1/finance/search?q={}&lang=en-US&region=US&quotesCount=6&newsCount=2&listsCount=2&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&enableResearchReports=true&enableCulturalAssets=true&enableLogoUrl=true&researchReportsCount=2'
+
+  def _construct_url(self, ticker_symbol):
+    return self.URL_TEMPLATE.format(ticker_symbol)
+
+  def __init__(self, ticker_symbol):
+    self.ticker_symbol = ticker_symbol
+    self.url = self._construct_url(ticker_symbol)
 
 class YahooFinanceQuote:
   # Expects the ticker symbol as the only argument.
@@ -16,7 +26,8 @@ class YahooFinanceQuote:
     return YahooFinanceQuote.URL_TEMPLATE.format(ticker_symbol)
 
   def __init__(self, ticker_symbol):
-    self.ticker_symbol = ticker_symbol.replace('.', '-')
+    #self.ticker_symbol = ticker_symbol.replace('.', '-')
+    self.ticker_symbol = ticker_symbol
     self.url = YahooFinanceQuote._construct_url(self.ticker_symbol)
     self.current_price = None
     self.market_cap = None
@@ -63,46 +74,6 @@ class YahooFinanceQuote:
     if results:
       self.ttm_eps = results[0].get('epsTrailingTwelveMonths', None)
     return True if self.ttm_eps else False
-
-
-class YahooFinanceAnalysis:
-  URL_TEMPLATE = 'https://finance.yahoo.com/quote/{}/analysis?p={}'
-
-  @classmethod
-  def _construct_url(cls, ticker_symbol):
-    return cls.URL_TEMPLATE.format(ticker_symbol, ticker_symbol)
-
-  @classmethod
-  def _isPercentage(cls, text):
-    if not isinstance(text, str):
-      return False
-    match = re.match('(\d+(\.\d+)?%)', text)
-    return match != None
-
-  @classmethod
-  def _parseNextPercentage(cls, iterator):
-    try:
-      node = None
-      while node is None or not cls._isPercentage(node.text):
-        node = next(iterator)
-      return node.text
-    except:  # End of iteration
-      return None
-
-  def __init__(self, ticker_symbol):
-    self.ticker_symbol = ticker_symbol.replace('.', '-')
-    self.url = YahooFinanceAnalysis._construct_url(self.ticker_symbol)
-    self.five_year_growth_rate = None
-
-  def parse_analyst_five_year_growth_rate(self, content):
-    tree = html.fromstring(bytes(content, encoding='utf8'))
-    tree_iterator = tree.iter()
-    for element in tree_iterator:
-      text = element.text
-      if text == 'Next 5 Years (per annum)':
-        percentage = YahooFinanceAnalysis._parseNextPercentage(tree_iterator)
-        self.five_year_growth_rate = percentage.rstrip("%") if percentage else None
-    return True if self.five_year_growth_rate else False
 
 
 class YahooFinanceQuoteSummaryModule(Enum):
@@ -191,6 +162,8 @@ class YahooFinanceQuoteSummary:
     self.modules = [self._MODULES[module] for module in modules]
     self.url = YahooFinanceQuoteSummary._construct_url(ticker_symbol, self.modules)
     self.module_data = {}
+    self.long_term_debt = None
+    self.roic_average_growth_rates = []
 
   def parse_modules(self, content):
     """Parses all the of the module responses from the json into a top-level dictionary."""
@@ -204,16 +177,88 @@ class YahooFinanceQuoteSummary:
         if module in result:
           self.module_data[module] = result[module]
           break
+    self.parse_long_term_debt()
+    self.parse_roic_growth_rates()
     return True
 
   def get_balance_sheet_history(self, key):
     history = []
     for stmt in self.module_data.get('balanceSheetHistory', {}).get('balanceSheetStatements', []):
-      history.append(stmt.get(key).get('raw'))
+      history.append(stmt.get(key, {}).get('raw', None))
     return history
 
   def get_income_statement_history(self, key):
     history = []
     for stmt in self.module_data.get('incomeStatementHistory', {}).get('incomeStatementHistory', []):
-      history.append(stmt.get(key).get('raw'))
+      history.append(stmt.get(key, {}).get('raw', None))
     return history
+
+  def get_latest_free_cash_flow(self):
+    # Setting default free_cash_flow to 1 because it's small and doesn't play role then
+    return self.module_data.get('financialData', {}).get('freeCashflow', {}).get('raw', None)
+
+  def get_analyst_estimated_growth_rate(self):
+    trends = self.module_data.get('earningsTrend', {}).get('trend', [])
+    for trend in trends:
+      if trend.get('period', '') == '+5y':
+        growth = trend.get('growth', {}).get('raw', None)
+        if growth:
+          return growth*100
+        else:
+          return growth
+  
+  def parse_long_term_debt(self):
+    self.long_term_debt = self.get_balance_sheet_history('longTermDebt')[0]
+
+  def parse_roic_growth_rates(self):
+    """
+    Calculate ROIC averages for 1,3,5 and Max years
+    StockRow averages aren't accurate, so we're getting avgs for 1y and 3y from Yahoo
+    by calculating these by ouselves. The rest is from StockRow to at least have some (even
+    a bit inaccurate values), cause Yahoo has data for 4 years only.
+    """
+    self.roic_average_growth_rates.append(self._get_roic_average(years=1))
+    self.roic_average_growth_rates.append(self._get_roic_average(years=3))
+
+  def _get_roic_history(self):
+    """
+    Calculates ROIC historial values based on annual financial statements.
+
+    net_income_history: Net Income (starts from the last annual statement)
+    cash_history: Cash (starts from the last annual statement)
+    long_term_debt_history: Long Term Debt (starts from the last annual statement)
+    stockholder_equity_history: Stockholder Equity (starts from the last annual statement)
+    """
+    net_income_history = self.get_income_statement_history('netIncome')
+    cash_history = self.get_balance_sheet_history('cash')
+    long_term_debt_history = self.get_balance_sheet_history(
+       'longTermDebt'
+    )
+    stockholder_equity_history = self.get_balance_sheet_history(
+       'totalStockholderEquity'
+    )
+    roic_history = []
+    for i in range(0, len(net_income_history)):
+      if (
+        net_income_history[i] is not None
+        and cash_history[i] is not None
+        and long_term_debt_history[i] is not None
+        and stockholder_equity_history[i] is not None
+      ):
+        logging.debug(f"Calculating ROIC based on Net Income {net_income_history[i]}, Cash {cash_history[i]} LongDebt {long_term_debt_history[i]}, StockholderEquity {stockholder_equity_history[i]}")
+        roic_history.append(
+          RuleOne.calculate_roic(
+            net_income_history[i], cash_history[i],
+            long_term_debt_history[i], stockholder_equity_history[i]
+          )
+        )
+      else:
+        roic_history.append(None)
+
+    return roic_history
+
+  def _get_roic_average(self, years):
+    history = self._get_roic_history()
+    if len(history[0:years]) < years or any([roic is None for roic in history[0:years]]):
+      return None
+    return round(sum(history[0:years]) / years, 2)
