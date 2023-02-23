@@ -4,36 +4,16 @@ import logging
 import re
 from lxml import html
 import src.RuleOneInvestingCalculations as RuleOne
+from src.Base import Base
 
-class YahooAutocomplete:
+class YahooAutocomplete(Base):
   URL_TEMPLATE = 'https://query1.finance.yahoo.com/v1/finance/search?q={}&lang=en-US&region=US&quotesCount=6&newsCount=2&listsCount=2&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&enableResearchReports=true&enableCulturalAssets=true&enableLogoUrl=true&researchReportsCount=2'
 
-  def _construct_url(self, ticker_symbol):
-    return self.URL_TEMPLATE.format(ticker_symbol)
-
-  def __init__(self, ticker_symbol):
-    self.ticker_symbol = ticker_symbol
-    self.url = self._construct_url(ticker_symbol)
-
-class YahooFinanceQuote:
+class YahooFinanceQuote(Base):
   # Expects the ticker symbol as the only argument.
   # This can theoretically request multiple comma-separated symbols.
   # This could theoretically be trimmed down by using `fields=` parameter.
-  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols={}'
-
-  @classmethod
-  def _construct_url(cls, ticker_symbol):
-    return YahooFinanceQuote.URL_TEMPLATE.format(ticker_symbol)
-
-  def __init__(self, ticker_symbol):
-    #self.ticker_symbol = ticker_symbol.replace('.', '-')
-    self.ticker_symbol = ticker_symbol
-    self.url = YahooFinanceQuote._construct_url(self.ticker_symbol)
-    self.current_price = None
-    self.market_cap = None
-    self.name = None
-    self.average_volume = None
-    self.ttm_eps = None
+  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols={}' 
 
   def parse_quote(self, content):
     data = json.loads(content)
@@ -106,10 +86,10 @@ class YahooFinanceQuoteSummaryModule(Enum):
 
 
 ## (unofficial) API documentation: https://observablehq.com/@stroked/yahoofinance
-class YahooFinanceQuoteSummary:
+class YahooFinanceQuoteSummary(Base):
   # Expects the ticker symbol as the first format string, and a comma-separated list
   # of `QuotesummaryModules` strings for the second argument.
-  _URL_TEMPLATE = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/{}?modules={}'
+  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/{}?modules={}'
 
   # A list of modules that can be used inside of `QUOTE_SUMMARY_URL_TEMPLATE`.
   # These should be passed as a comma-separated list.
@@ -142,10 +122,9 @@ class YahooFinanceQuoteSummary:
     YahooFinanceQuoteSummaryModule.sectorTrend: "sectorTrend"
   }
 
-  @classmethod
-  def _construct_url(cls, ticker_symbol, modules):
-    modulesString = cls._construct_modules_string(modules)
-    return cls._URL_TEMPLATE.format(ticker_symbol, modulesString)
+  def get_url(self, ticker_symbol, modules):
+    modulesString = self._construct_modules_string(modules)
+    return self.URL_TEMPLATE.format(ticker_symbol, modulesString)
 
   # A helper method to return a formatted modules string.
   @classmethod
@@ -158,12 +137,10 @@ class YahooFinanceQuoteSummary:
   # Accepts the ticker symbol followed by a list of
   # `YahooFinanceQuoteSummaryModule` enum values.
   def __init__(self, ticker_symbol, modules):
-    self.ticker_symbol = ticker_symbol
+    super().__init__(ticker_symbol)
     self.modules = [self._MODULES[module] for module in modules]
-    self.url = YahooFinanceQuoteSummary._construct_url(ticker_symbol, self.modules)
+    self.url = self.get_url(ticker_symbol, self.modules)
     self.module_data = {}
-    self.long_term_debt = None
-    self.roic_average_growth_rates = []
 
   def parse_modules(self, content):
     """Parses all the of the module responses from the json into a top-level dictionary."""

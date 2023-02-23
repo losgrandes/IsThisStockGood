@@ -1,11 +1,9 @@
 import json
 import logging
+from src.Base import Base
 
-class MSNMoney:
-  TICKER_URL = 'https://services.bingapis.com/contentservices-finance.csautosuggest/api/v1/Query?query={}&market=en-us'
-  def __init__(self, ticker_symbol):
-    #self.ticker_symbol = ticker_symbol.replace('.', '')
-    self.ticker_symbol = ticker_symbol
+class MSNMoney(Base):
+  AUTOCOMPLETE_URL = 'https://services.bingapis.com/contentservices-finance.csautosuggest/api/v1/Query?query={}&market=en-us'
 
   def extract_stock_id(self, content):
     data = json.loads(content)
@@ -15,10 +13,7 @@ class MSNMoney:
             return js.get('SecId', '')
 
   def get_ticker_autocomplete_url(self):
-    return self.TICKER_URL.format(self.ticker_symbol)
-
-  def get_url(self, stock_id):
-    return self.URL.format(stock_id)
+    return self.AUTOCOMPLETE_URL.format(self.ticker_symbol)
 
   def _average(self, rates):
     if len(rates) == 0 or any([isinstance(rate, str) for rate in rates]):
@@ -27,20 +22,8 @@ class MSNMoney:
 
 class MSNMoneyKeyRatios(MSNMoney):
 
-  URL = 'https://services.bingapis.com/contentservices-finance.financedataservice/api/v1/KeyRatios?stockId={}'
+  URL_TEMPLATE = 'https://services.bingapis.com/contentservices-finance.financedataservice/api/v1/KeyRatios?stockId={}'
   KEY_RATIOS_YEAR_SPAN = 5
-
-  def __init__(self, ticker_symbol):
-    super().__init__(ticker_symbol)
-    self.pe_high = None
-    self.pe_low = None
-    self.eps_growth_rates = []
-    self.equity_growth_rates = []
-    self.free_cash_flow_growth_rates = []
-    self.revenue_growth_rates = []
-    self.debt_equity_ratio = None
-    self.eps_ttm = None
-    self.latest_equity_growth_rate = None
 
   def parse_msn_ratios(self, content):
     self._parse_annual_ratios(json.loads(content))
@@ -105,13 +88,7 @@ class MSNMoneyKeyRatios(MSNMoney):
 
 class MSNMoneyKeyStats(MSNMoney):
 
-  URL = 'https://assets.msn.com/service/Finance/Equities/financialstatements?apikey=0QfOX3Vn51YCzitbLaRkTTBadtWpgTN8NZLW0C1SEM&activityId=BB1AD374-918B-4E88-8F0E-26246BC4DBA5&ocid=finance-utils-peregrine&cm=en-us&$filter=_p%20eq%20%27{}%27&$top=200&wrapodata=false'
-  KEY_STATS_YEAR_SPAN = 5
-
-  def __init__(self, ticker_symbol):
-    super().__init__(ticker_symbol)
-    self.last_year_net_income = None
-    self.long_term_debt = None
+  URL_TEMPLATE = 'https://assets.msn.com/service/Finance/Equities/financialstatements?apikey=0QfOX3Vn51YCzitbLaRkTTBadtWpgTN8NZLW0C1SEM&activityId=BB1AD374-918B-4E88-8F0E-26246BC4DBA5&ocid=finance-utils-peregrine&cm=en-us&$filter=_p%20eq%20%27{}%27&$top=200&wrapodata=false'
 
   def parse(self, content):
     return self._parse(json.loads(content))

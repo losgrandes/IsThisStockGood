@@ -197,7 +197,7 @@ class DataFetcher():
   def fetch_stockrow_key_stats(self):
     self.stockrow_key_stats = StockRowKeyStats(self.ticker_symbol)
     session = self._create_session()
-    key_stat_rpc = session.get(self.stockrow_key_stats.key_stat_url, hooks={
+    key_stat_rpc = session.get(self.stockrow_key_stats.get_url(self.ticker_symbol), hooks={
        'response': self.parse_stockrow_key_stats,
     })
     self.rpcs.append(key_stat_rpc)
@@ -261,7 +261,7 @@ class DataFetcher():
       'User-Agent' : random.choice(DataFetcher.USER_AGENT_LIST)
     })
     self.yahoo_autocomplete = YahooAutocomplete(self.ticker_symbol)
-    response = session.get(self.yahoo_autocomplete.url)
+    response = session.get(self.yahoo_autocomplete.get_url(self.ticker_symbol))
     if response.status_code != 200:
       return
     data = json.loads(response.text)
@@ -275,7 +275,7 @@ class DataFetcher():
   def fetch_yahoo_finance_quote(self):
     self.yahoo_finance_quote = YahooFinanceQuote(self.yahoo_autocomplete.ticker_symbol)
     session = self._create_session()
-    rpc = session.get(self.yahoo_finance_quote.url, allow_redirects=True, hooks={
+    rpc = session.get(self.yahoo_finance_quote.get_url(self.ticker_symbol), allow_redirects=True, hooks={
        'response': self.parse_yahoo_finance_quote,
     })
     self.rpcs.append(rpc)

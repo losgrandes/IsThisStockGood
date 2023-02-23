@@ -6,44 +6,13 @@ import json
 import logging
 import src.RuleOneInvestingCalculations as RuleOne
 import traceback
+from src.Base import Base
 
-# Stockrow does not seem to update their ticker symbols very promptly. This can be used
-# as a temporary mapping to allow strocks to continue to work after a rename.
-def _temporary_ticker_mapping(ticker_symbol):
-  mapping = {
-      'META' : 'FB'
-  }
-  return mapping.get(ticker_symbol.upper(), ticker_symbol)
 
-class StockRowKeyStats:
+class StockRowKeyStats(Base):
   """An object wrapping the key stats data from stockrow.com"""
 
-  STOCKROW_KEY_STATS_URL = 'https://stockrow.com/api/companies/{}/new_key_stats.json'
-
-  def __init__(self, ticker_symbol):
-    """Initializes the ratio with a given ticker symbol.
-
-    Args:
-      ticker_symbol: A string representing the ticker symbol.
-    """
-    self.ticker_symbol = _temporary_ticker_mapping(ticker_symbol)
-    self.key_stat_url = self.STOCKROW_KEY_STATS_URL.format(self.ticker_symbol)
-    self.roic = []  # Return on invested capital
-    self.roic_average_growth_rates = []
-    self.equity = []  # Equity or BVPS (book value per share)
-    self.equity_growth_rates = []
-    self.latest_equity_growth_rate = None
-    self.free_cash_flow = []  # Free Cash Flow
-    self.free_cash_flow_growth_rates = []
-    self.revenue_growth_rates = []  # Revenue
-    self.eps_growth_rates = []  # Earnings per share
-    self.last_year_net_income = 0
-    self.total_debt = 0
-    self.recent_free_cash_flow = 0
-    self.debt_payoff_time = 0
-    self.debt_equity_ratio = None
-    self.pe_high = None
-    self.pe_low = None
+  URL_TEMPLATE = 'https://stockrow.com/api/companies/{}/new_key_stats.json'
 
   def parse_json_data(self, data):
     try:
