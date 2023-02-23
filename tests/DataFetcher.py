@@ -17,7 +17,7 @@ class DataFetcherTest(unittest.TestCase):
   def test_roic_should_return_1_3_from_yahoo_and_the_rest_from_stockrow(self):
     df = DataFetcher()
     df.stockrow_key_stats = StockRowKeyStats('DUMMY')
-    df.stockrow_key_stats.roic_averages = [11, 22, 33, 44, 55, 66, 77]
+    df.stockrow_key_stats.roic_average_growth_rates = [11, 22, 33, 44]
     modules = [
         YahooFinanceQuoteSummaryModule.incomeStatementHistory,
         YahooFinanceQuoteSummaryModule.balanceSheetHistory
@@ -57,16 +57,15 @@ class DataFetcherTest(unittest.TestCase):
           ]
       }
     }
-    roic_avgs = df.get_roic_averages()
-    self.assertEqual(roic_avgs[0], 10.0)
-    self.assertEqual(roic_avgs[1], 20.0)
-    self.assertEqual(roic_avgs[2], 33)
-    self.assertEqual(roic_avgs[3], 77)
+    df.yahoo_finance_quote_summary.parse_roic_growth_rates()
+    df.sources = [df.stockrow_key_stats, df.yahoo_finance_quote_summary]
+    roic_avgs = df.get_growth_rates('roic_average')
+    self.assertEqual(roic_avgs, [10.0, 20.0, 33, 44])
 
   def test_roic_should_return_1_from_yahoo_and_the_rest_from_stockrow(self):
     df = DataFetcher()
     df.stockrow_key_stats = StockRowKeyStats('DUMMY')
-    df.stockrow_key_stats.roic_averages = [11, 22, 33, 44, 55, 66, 77]
+    df.stockrow_key_stats.roic_average_growth_rates = [11, 22, 33, 44]
     modules = [
         YahooFinanceQuoteSummaryModule.incomeStatementHistory,
         YahooFinanceQuoteSummaryModule.balanceSheetHistory
@@ -90,25 +89,23 @@ class DataFetcherTest(unittest.TestCase):
           ]
       }
     }
-    roic_avgs = df.get_roic_averages()
-    self.assertEqual(roic_avgs[0], 10.0)
-    self.assertEqual(roic_avgs[1], 22)
-    self.assertEqual(roic_avgs[2], 33)
-    self.assertEqual(roic_avgs[3], 77)
+    df.yahoo_finance_quote_summary.parse_roic_growth_rates()
+    df.sources = [df.stockrow_key_stats, df.yahoo_finance_quote_summary]
+    roic_avgs = df.get_growth_rates('roic_average')
+    self.assertEqual(roic_avgs, [10.0, 22, 33, 44])
 
   def test_roic_should_return_all_from_stockrow_if_nothing_in_yahoo(self):
     df = DataFetcher()
     df.stockrow_key_stats = StockRowKeyStats('DUMMY')
-    df.stockrow_key_stats.roic_averages = [11, 22, 33, 44, 55, 66, 77]
-    roic_avgs = df.get_roic_averages()
-    self.assertEqual(roic_avgs[0], 11)
-    self.assertEqual(roic_avgs[1], 22)
-    self.assertEqual(roic_avgs[2], 33)
-    self.assertEqual(roic_avgs[3], 77)
+    df.stockrow_key_stats.roic_average_growth_rates = [11, 22, 33, 44]
+    df.sources = [df.stockrow_key_stats]
+    roic_avgs = df.get_growth_rates('roic_average')
+    self.assertEqual(roic_avgs, [11, 22, 33, 44])
 
   def test_roic_should_return_all_it_has_from_stockrow_if_nothing_in_yahoo(self):
     df = DataFetcher()
     df.stockrow_key_stats = StockRowKeyStats('DUMMY')
-    df.stockrow_key_stats.roic_averages = [11, 22]
-    roic_avgs = df.get_roic_averages()
-    self.assertEqual(len(roic_avgs), 2)
+    df.stockrow_key_stats.roic_average_growth_rates = [11, 22]
+    df.sources = [df.stockrow_key_stats]
+    roic_avgs = df.get_growth_rates('roic_average')
+    self.assertEqual(roic_avgs, [11, 22, None, None])
