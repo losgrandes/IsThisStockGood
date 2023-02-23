@@ -349,7 +349,7 @@ class DataFetcher():
       f'Found maximum {key} of {getattr(working_sources_sorted[0], key)} in {working_sources_sorted[0].__class__.__name__}'
     )
     logging.debug(
-      f"""Available sources were {
+      f"""Available sources = {
         [
           working_source.__class__.__name__+" ("+str(getattr(working_source, key))+")"
           for working_source in working_sources_sorted
@@ -371,7 +371,7 @@ class DataFetcher():
       f'Found minimum {key} of {getattr(working_sources_sorted[0], key)} in {working_sources_sorted[0].__class__.__name__}'
     )
     logging.debug(
-      f"""Available sources were {
+      f"""Available sources = {
         [
           working_source.__class__.__name__+" ("+str(getattr(working_source, key))+")"
           for working_source in working_sources_sorted
