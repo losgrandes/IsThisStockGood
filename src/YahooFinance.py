@@ -2,12 +2,27 @@ from enum import Enum
 import json
 import logging
 import re
-from lxml import html
 import src.RuleOneInvestingCalculations as RuleOne
 from src.Base import Base
 
+
 class YahooAutocomplete(Base):
-  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v1/finance/search?q={}&lang=en-US&region=US&quotesCount=6&newsCount=2&listsCount=2&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query&multiQuoteQueryId=multi_quote_single_token_query&newsQueryId=news_cie_vespa&enableCb=true&enableNavLinks=true&enableEnhancedTrivialQuery=true&enableResearchReports=true&enableCulturalAssets=true&enableLogoUrl=true&researchReportsCount=2'
+  URL_TEMPLATE = 'https://query2.finance.yahoo.com/v1/finance/search?q={}&lang=en-US&region=US&quotesCount=10&listsCount=2&enableFuzzyQuery=false&quotesQueryId=tss_match_phrase_query'
+
+  def extract_stock_id(self, content, exchange):
+    data = json.loads(content)
+    quotes = data.get('quotes', [])
+    possible_symbols = []
+    for quote in quotes:
+      if quote.get('exchange', '') == exchange and self.ticker_symbol in quote.get('symbol'):
+        possible_symbols.append(quote.get('symbol'))
+    if len(possible_symbols) == 1:
+      return possible_symbols[0]
+    elif self.ticker_symbol in possible_symbols:
+      return self.ticker_symbol
+    else:
+      logging.error(f"Possible tickers {possible_symbols}")
+      raise ValueError(f"Couldn't fetch Yahoo id for {self.ticker_symbol}")
 
 class YahooFinanceQuote(Base):
   # Expects the ticker symbol as the only argument.
@@ -15,7 +30,7 @@ class YahooFinanceQuote(Base):
   # This could theoretically be trimmed down by using `fields=` parameter.
   URL_TEMPLATE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols={}' 
 
-  def parse_quote(self, content):
+  def parse(self, content, *args, **kwargs):
     data = json.loads(content)
     results = data.get('quoteResponse', {}).get('result', [])
     if not results:
@@ -141,6 +156,7 @@ class YahooFinanceQuoteSummary(Base):
     self.modules = [self._MODULES[module] for module in modules]
     self.url = self.get_url(ticker_symbol, self.modules)
     self.module_data = {}
+    self.analyst_estimated_growth_rate = None
 
   def parse_modules(self, content):
     """Parses all the of the module responses from the json into a top-level dictionary."""
@@ -156,6 +172,8 @@ class YahooFinanceQuoteSummary(Base):
           break
     self.parse_long_term_debt()
     self.parse_roic_growth_rates()
+    self.parse_latest_free_cash_flow()
+    self.parse_analyst_estimated_growth_rate()
     return True
 
   def get_balance_sheet_history(self, key):
@@ -170,19 +188,19 @@ class YahooFinanceQuoteSummary(Base):
       history.append(stmt.get(key, {}).get('raw', None))
     return history
 
-  def get_latest_free_cash_flow(self):
+  def parse_latest_free_cash_flow(self):
     # Setting default free_cash_flow to 1 because it's small and doesn't play role then
-    return self.module_data.get('financialData', {}).get('freeCashflow', {}).get('raw', None)
+    self.latest_free_cash_flow = self.module_data.get('financialData', {}).get('freeCashflow', {}).get('raw', None)
 
-  def get_analyst_estimated_growth_rate(self):
+  def parse_analyst_estimated_growth_rate(self):
     trends = self.module_data.get('earningsTrend', {}).get('trend', [])
     for trend in trends:
       if trend.get('period', '') == '+5y':
         growth = trend.get('growth', {}).get('raw', None)
         if growth:
-          return growth*100
+          self.analyst_estimated_growth_rate = growth*100
         else:
-          return growth
+          self.analyst_estimated_growth_rate = growth
   
   def parse_long_term_debt(self):
     self.long_term_debt = self.get_balance_sheet_history('longTermDebt')[0]
@@ -222,7 +240,7 @@ class YahooFinanceQuoteSummary(Base):
         and long_term_debt_history[i] is not None
         and stockholder_equity_history[i] is not None
       ):
-        logging.debug(f"Calculating ROIC based on Net Income {net_income_history[i]}, Cash {cash_history[i]} LongDebt {long_term_debt_history[i]}, StockholderEquity {stockholder_equity_history[i]}")
+        logging.debug(f"Calculating (Yahoo) ROIC based on Net Income {net_income_history[i]}, Cash {cash_history[i]} LongDebt {long_term_debt_history[i]}, StockholderEquity {stockholder_equity_history[i]}")
         roic_history.append(
           RuleOne.calculate_roic(
             net_income_history[i], cash_history[i],

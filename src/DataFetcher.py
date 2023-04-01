@@ -3,6 +3,7 @@ import random
 import logging
 import sys
 import src.RuleOneInvestingCalculations as RuleOne
+import mysql.connector as sql
 from requests_futures.sessions import FuturesSession
 from requests import Session
 from src.MSNMoney import MSNMoneyKeyRatios, MSNMoneyKeyStats
@@ -12,7 +13,7 @@ YahooFinanceQuoteSummary, YahooFinanceQuoteSummaryModule,\
 YahooAutocomplete
 from threading import Lock
 
-def fetchDataForTickerSymbol(ticker):
+def fetchDataForTickerSymbol(ticker, exchange=None):
   """Fetches and parses all of the financial data for the `ticker`.
 
     Args:
@@ -40,52 +41,76 @@ def fetchDataForTickerSymbol(ticker):
 
   data_fetcher = DataFetcher()
   data_fetcher.ticker_symbol = ticker
-
+  mydb = sql.connect(
+    user="isthisstockgood",
+    password="ruleone",
+    database='isthisstockgood'
+  )
+  query = f"""
+SELECT p.exchange, mic_code
+from markets m
+left join stocks_payload p on p.exchange = m.exchange
+where p.ticker='{ticker}'
+  """
+  if exchange:
+    query += f" and p.exchange='{exchange}'"
+  mycursor = mydb.cursor(buffered=True)
+  mycursor.execute(query)
+  rows = mycursor.fetchall()
+  if len(rows) > 1:
+    raise ValueError("Too many markets for "+ticker)
+    sys.exit(1)
+  elif not rows:
+    raise ValueError("Couldn't find market for "+ticker)
+  else:
+    data_fetcher.exchange = rows[0][0]
+    data_fetcher.mic_code = rows[0][1]
   # Make all network request asynchronously to build their portion of
   # the json results.
-  data_fetcher.fetch_stockrow_key_stats()
-  data_fetcher.fetch_msn_key_stats()
-  data_fetcher.fetch_msn_ratios()
   data_fetcher.fetch_yahoo_ticker()
-  data_fetcher.fetch_yahoo_finance_quote()
+  data_fetcher.fetch_msn_key_stats()
+  data_fetcher.fetch(YahooFinanceQuote(data_fetcher.yahoo_autocomplete.ticker_symbol))
+  data_fetcher.fetch_msn_ratios()
   data_fetcher.fetch_yahoo_finance_quote_summary()
+  if data_fetcher.exchange in ('NMS','NYQ'):
+    data_fetcher.fetch(StockRowKeyStats(data_fetcher.ticker_symbol))
   # Wait for each RPC result before proceeding.
   for rpc in data_fetcher.rpcs:
     rpc.result()
   margin_of_safety_price, sticker_price = _calculate_mos_and_sticker(
     data_fetcher.get_min('max_equity_growth_rate'),
     data_fetcher.get_min('pe_high'), data_fetcher.get_min('pe_low'),
-    data_fetcher.get_analyst_estimated_growth_rate(),
+    data_fetcher.get_min('analyst_estimated_growth_rate'),
     data_fetcher.get_min('ttm_eps')
     )
   payback_time = _calculate_payback_time(
-    data_fetcher.get_last_year_net_income(),
+    data_fetcher.get_min('last_year_net_income'),
     data_fetcher.get_min('max_equity_growth_rate'),
-    data_fetcher.get_market_cap(),
-    data_fetcher.get_analyst_estimated_growth_rate()
+    data_fetcher.get_min('market_cap'),
+    data_fetcher.get_min('analyst_estimated_growth_rate')
   )
-  if data_fetcher.get_max('long_term_debt') is not None and data_fetcher.get_latest_free_cash_flow() is not None:
-    debt_payoff_time = data_fetcher.get_max('long_term_debt') / data_fetcher.get_latest_free_cash_flow()
+  if data_fetcher.get_max('long_term_debt') is not None and data_fetcher.get_min('latest_free_cash_flow') is not None:
+    debt_payoff_time = data_fetcher.get_max('long_term_debt') / data_fetcher.get_min('latest_free_cash_flow')
   else:
     debt_payoff_time = None
   template_values = {
     'ticker' : ticker,
-    'name' : data_fetcher.get_company_name(),
+    'name' : data_fetcher.get_company_details('name'),
     'roic': data_fetcher.get_growth_rates('roic_average'),
     'eps': data_fetcher.get_growth_rates('eps'),
     'sales': data_fetcher.get_growth_rates('revenue'),
     'equity': data_fetcher.get_growth_rates('equity'),
     'cash': data_fetcher.get_growth_rates('free_cash_flow'),
     'long_term_debt' : data_fetcher.get_max('long_term_debt'),
-    'free_cash_flow' : data_fetcher.get_latest_free_cash_flow(),
+    'free_cash_flow' : data_fetcher.get_min('latest_free_cash_flow'),
     'debt_payoff_time' : debt_payoff_time,
     'debt_equity_ratio' : data_fetcher.get_max('debt_equity_ratio'),
     'margin_of_safety_price' : margin_of_safety_price,
-    'current_price' : data_fetcher.get_current_price(),
+    'current_price' : data_fetcher.get_max('current_price'),
     'sticker_price' : sticker_price,
     'payback_time' : payback_time,
-    'average_volume' : data_fetcher.get_average_volume(),
-    'ttm_net_income' : data_fetcher.get_last_year_net_income()
+    'average_volume' : data_fetcher.get_min('average_volume'),
+    'ttm_net_income' : data_fetcher.get_min('last_year_net_income')
   }
   return template_values
 
@@ -156,6 +181,8 @@ class DataFetcher():
     self.yahoo_autocomplete = None
     self.error = False
     self.sources = []
+    self.exchange = None
+    self.mic_code = None
 
   def _create_session(self):
     session = FuturesSession()
@@ -163,6 +190,25 @@ class DataFetcher():
       'User-Agent' : random.choice(DataFetcher.USER_AGENT_LIST)
     })
     return session
+
+  # TODO continue moving other fetches like this 
+  def fetch(self, module):
+    self.lock.acquire()
+    self.sources.append(module)
+    self.lock.release()
+    session = self._create_session()
+    rpc = session.get(module.get_url(), allow_redirects=True, hooks={
+       'response': [self.parse(module=module)],
+    })
+    self.rpcs.append(rpc)
+
+  def parse(*factory_args, **factory_kwargs):
+    def _parse(response, *request_args, **request_kwargs):
+      if response.status_code != 200:
+        return
+      success = factory_kwargs['module'].parse(response.text)
+      return None
+    return _parse
 
   def fetch_msn_key_stats(self):
 
@@ -175,7 +221,7 @@ class DataFetcher():
 
   def continue_fetching_msn_key_stats(self, response, *args, **kwargs):
 
-    msn_stock_id = self.msn_key_stats.extract_stock_id(response.text)
+    msn_stock_id = self.msn_key_stats.extract_stock_id(response.text, self.mic_code)
     session = self._create_session()
     rpc = session.get(self.msn_key_stats.get_url(msn_stock_id), allow_redirects=True, hooks={
        'response': self.parse_msn_key_stats,
@@ -192,28 +238,6 @@ class DataFetcher():
       self.msn_key_stats = None
     else:
       self.sources.append(self.msn_key_stats)
-    self.lock.release()
-
-  def fetch_stockrow_key_stats(self):
-    self.stockrow_key_stats = StockRowKeyStats(self.ticker_symbol)
-    session = self._create_session()
-    key_stat_rpc = session.get(self.stockrow_key_stats.get_url(self.ticker_symbol), hooks={
-       'response': self.parse_stockrow_key_stats,
-    })
-    self.rpcs.append(key_stat_rpc)
-
-  # Called asynchronously upon completion of the URL fetch from
-  # `fetch_stockrow_key_stats`.
-  def parse_stockrow_key_stats(self, response, *args, **kwargs):
-    self.lock.acquire()
-    if not self.stockrow_key_stats:
-      self.lock.release()
-      return
-    success = self.stockrow_key_stats.parse_json_data(response.content)
-    if not success:
-      self.stockrow_key_stats = None
-    else:
-      self.sources.append(self.stockrow_key_stats)
     self.lock.release()
 
   def fetch_msn_ratios(self):
@@ -234,7 +258,7 @@ class DataFetcher():
     After msn_stock_id was fetched in fetch_pe_ratios method
     we can now get the financials
     """
-    msn_stock_id = self.msn_ratios.extract_stock_id(response.text)
+    msn_stock_id = self.msn_ratios.extract_stock_id(response.text, self.mic_code)
     session = self._create_session()
     rpc = session.get(self.msn_ratios.get_url(msn_stock_id), allow_redirects=True, hooks={
        'response': self.parse_msn_ratios,
@@ -261,38 +285,10 @@ class DataFetcher():
       'User-Agent' : random.choice(DataFetcher.USER_AGENT_LIST)
     })
     self.yahoo_autocomplete = YahooAutocomplete(self.ticker_symbol)
-    response = session.get(self.yahoo_autocomplete.get_url(self.ticker_symbol))
+    response = session.get(self.yahoo_autocomplete.get_url())
     if response.status_code != 200:
       return
-    data = json.loads(response.text)
-    quotes = data.get('quotes', [])
-    if len(quotes) == 1 and not quotes[0].get('symbol', None):
-      self.yahoo_autocomplete.ticker_symbol = quotes[0].get('symbol', None)
-    else:
-      # TODO make it smarter to deal with multi suggestions from Yahoo autocomplete
-      self.yahoo_autocomplete.ticker_symbol = self.ticker_symbol
-
-  def fetch_yahoo_finance_quote(self):
-    self.yahoo_finance_quote = YahooFinanceQuote(self.yahoo_autocomplete.ticker_symbol)
-    session = self._create_session()
-    rpc = session.get(self.yahoo_finance_quote.get_url(self.ticker_symbol), allow_redirects=True, hooks={
-       'response': self.parse_yahoo_finance_quote,
-    })
-    self.rpcs.append(rpc)
-
-  # Called asynchronously upon completion of the URL fetch from
-  # `fetch_yahoo_finance_quote`.
-  def parse_yahoo_finance_quote(self, response, *args, **kwargs):
-    if response.status_code != 200:
-      return
-    if not self.yahoo_finance_quote:
-      return
-    result = response.text
-    success = self.yahoo_finance_quote.parse_quote(result)
-    if not success:
-      self.yahoo_finance_quote = None
-    else:
-      self.sources.append(self.yahoo_finance_quote)
+    self.yahoo_autocomplete.ticker_symbol = self.yahoo_autocomplete.extract_stock_id(response.text, self.exchange)
 
   def fetch_yahoo_finance_quote_summary(self):
     modules = [
@@ -380,26 +376,18 @@ class DataFetcher():
     )
     return getattr(working_sources_sorted[0], key)
 
-  def get_latest_free_cash_flow(self):
-    if self.yahoo_finance_quote_summary.get_latest_free_cash_flow() and getattr(self.stockrow_key_stats, 'recent_free_cash_flow', None):
-      return max(self.yahoo_finance_quote_summary.get_latest_free_cash_flow(), self.stockrow_key_stats.recent_free_cash_flow)
-    else:
-      return self.yahoo_finance_quote_summary.get_latest_free_cash_flow() or getattr(self.stockrow_key_stats, 'recent_free_cash_flow', None)
-
-  def get_analyst_estimated_growth_rate(self):
-    return self.yahoo_finance_quote_summary.get_analyst_estimated_growth_rate()
-
-  def get_current_price(self):
-    return getattr(getattr(self, 'yahoo_finance_quote', None), 'current_price', None)
-
-  def get_company_name(self):
-    return getattr(getattr(self, 'yahoo_finance_quote', None), 'name', None)
-
-  def get_average_volume(self):
-    return getattr(getattr(self, 'yahoo_finance_quote', None), 'average_volume', None)
-
-  def get_market_cap(self):
-    return getattr(getattr(self, 'yahoo_finance_quote', None), 'market_cap', None)
-
-  def get_last_year_net_income(self):
-    return getattr(getattr(self, 'msn_key_stats', None), 'last_year_net_income', None)
+  # TODO More smart than picking the first source?
+  def get_company_details(self, key):
+    logging.debug("Getting company name")
+    working_sources = [source for source in self.sources if hasattr(source, key) and getattr(source, key) is not None]
+    logging.debug(
+      f"""Available sources = {
+        [
+          working_source.__class__.__name__+" ("+str(getattr(working_source, key))+")"
+          for working_source in working_sources
+        ]
+      }"""
+    )
+    if working_sources:
+      return getattr(working_sources[0], 'name', None)
+    return None

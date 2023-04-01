@@ -14,7 +14,7 @@ class StockRowKeyStats(Base):
 
   URL_TEMPLATE = 'https://stockrow.com/api/companies/{}/new_key_stats.json'
 
-  def parse_json_data(self, data):
+  def parse(self, data):
     try:
       json_data = json.loads(data)
       data_dict = {}
@@ -63,7 +63,7 @@ class StockRowKeyStats(Base):
       if not self.free_cash_flow:
         logging.error('Failed to parse Free Cash Flow.')
       else:
-        self.recent_free_cash_flow = self.free_cash_flow[-1] # Data already in USD millions
+        self.latest_free_cash_flow = self.free_cash_flow[-1] # Data already in USD millions
         
       net_income = _get_nested_values_for_key(data_dict, "Net Income")
       if net_income and len(net_income):
@@ -83,13 +83,13 @@ class StockRowKeyStats(Base):
 
 
   def calculate_total_debt(self, total_debts):
-    if not len(total_debts) > 0 or not self.recent_free_cash_flow:
+    if not len(total_debts) > 0 or not self.latest_free_cash_flow:
       self.total_debt = 0
-      logging.error('Failed to parse Long Term Debt')
+      logging.error('Failed to parse Total Debt')
       self.debt_payoff_time = 0
     else:
       self.total_debt = total_debts[-1]  # Data already in USD millions
-      self.debt_payoff_time = self.total_debt / self.recent_free_cash_flow
+      self.debt_payoff_time = self.total_debt / self.latest_free_cash_flow
 
   def calculate_ttm_eps(self, years):
     ttm_eps = 0

@@ -21,6 +21,5 @@ class Base:
         self.pe_low = None
         self.eps_ttm = None
 
-    # TODO get rid of param
-    def get_url(self, ticker_symbol):
-        return self.URL_TEMPLATE.format(ticker_symbol)
+    def get_url(self, ticker_symbol=None):
+        return self.URL_TEMPLATE.format(ticker_symbol or self.ticker_symbol)
