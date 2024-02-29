@@ -199,7 +199,10 @@ class DataFetcher():
 
   def continue_fetching_with_autocomplete(*factory_args, **factory_kwargs):
     def _continue_fetching(response, *args, **kwargs):
-      stock_id = factory_kwargs['module'].extract_stock_id(response.text, factory_kwargs['mic_code'])
+      try:
+        stock_id = factory_kwargs['module'].extract_stock_id(response.text, factory_kwargs['mic_code'])
+      except ValueError:
+        return
       session = factory_kwargs['data_fetcher']._create_session()
       rpc = session.get(factory_kwargs['module'].get_url(stock_id), allow_redirects=True, hooks={
         'response': [factory_kwargs['data_fetcher'].parse(module=factory_kwargs['module'])],
@@ -224,7 +227,10 @@ class DataFetcher():
     response = session.get(self.yahoo_autocomplete.get_url())
     if response.status_code != 200:
       return
-    self.yahoo_autocomplete.ticker_symbol = self.yahoo_autocomplete.extract_stock_id(response.text, self.exchange)
+    try:
+      self.yahoo_autocomplete.ticker_symbol = self.yahoo_autocomplete.extract_stock_id(response.text, self.exchange)
+    except ValueError:
+      self.yahoo_autocomplete.ticker_symbol = None
 
   def get_growth_rates(self, key):
     working_sources = [source for source in self.sources if hasattr(source, key+"_growth_rates")]

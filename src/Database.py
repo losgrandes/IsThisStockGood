@@ -24,11 +24,15 @@ class SQLite(object):
     else:
        return (rows[0][0], rows[0][1])
     
+  def get_stocks_to_be_fetched(self):
+     query = "select * from stocks_payload"
+     stock_list = self.db.execute(query).fetchall()
+     return stock_list
+
 
   def setValueForFieldWithName(self, table_name, ticker, field, value):
     if value is None:
         value = 'NULL'
-    print("UPDATE " + table_name + " SET " + field + "=" + str(value) + " WHERE ticker = '" + ticker + "'")
     self.db.execute("UPDATE " + table_name + " SET " + field + "=" + str(value) + " WHERE ticker = '" + ticker + "'")
 
   def setValuesForFieldRangeWithName(self, table_name, ticker, field, values):
