@@ -27,6 +27,14 @@ class MSNMoney(Base):
     if len(rates) == 0 or any([isinstance(rate, str) for rate in rates]):
       return None
     return round(sum(rates) / len(rates), 2)
+  
+class MSNQuote(MSNMoney):
+  URL_TEMPLATE = 'https://assets.msn.com/service/Finance/Quotes?apikey=0QfOX3Vn51YCzitbLaRkTTBadtWpgTN8NZLW0C1SEM&activityId=59691CB6-F24A-4C63-962D-DCA2411A7A65&ocid=finance-utils-peregrine&cm=en-us&it=web&scn=ANON&ids={}&wrapodata=false'
+
+  def parse(self, content):
+    data = json.loads(content)
+    self.current_price = data[0].get('price', None)
+    return True
 
 class MSNMoneyKeyRatios(MSNMoney):
 
@@ -78,7 +86,7 @@ class MSNMoneyKeyRatios(MSNMoney):
     ]
     # TODO Get debt_equity_ratio from the last quarter
     debt_equity_ratio = (
-      self.annual_key_ratios[0].get('debtToEquityRatio', None)
+      self.annual_key_ratios[0].get('debtToEquityRatio', None) if self.annual_key_ratios else None
       or data.get('companyAverage3Years', {}).get('debtToEquityRatio', None)
     )
     self.debt_equity_ratio = debt_equity_ratio / 100 if debt_equity_ratio is not None else None
@@ -104,10 +112,13 @@ class MSNMoneyKeyStats(MSNMoney):
   def _parse(self, data):
     balance_sheets_all = sorted([sheet.get('balanceSheets', {}) for sheet in data],key=lambda x: x.get('endDate'), reverse=True)
     income_statements_annual = sorted([sheet.get('incomeStatement', {}) for sheet in data if sheet.get('type','') == 'annual'],key=lambda x: x.get('endDate'), reverse=True)
+    total_outstanding_shares = balance_sheets_all[0].get('equity', {}).get('totalCommonSharesOutstanding', None)
     if balance_sheets_all:
       self.long_term_debt = balance_sheets_all[0].get('currentLiabilities',{}).get('totalLongTermDebt', None)
     if income_statements_annual:
       self.last_year_net_income = income_statements_annual[0].get('income',{}).get('netIncomeBeforeExtraItems', None)
+      if total_outstanding_shares is not None and total_outstanding_shares > 0 and self.last_year_net_income is not None:
+        self.ttm_eps =  self.last_year_net_income / total_outstanding_shares
     return True
 
   def _get_roic_history(self, data):

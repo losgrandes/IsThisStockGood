@@ -1,4 +1,5 @@
 import sqlite3 as sql
+import logging
 
 class SQLite(object):
   
@@ -24,10 +25,11 @@ class SQLite(object):
     else:
        return (rows[0][0], rows[0][1])
     
-  def get_stocks_to_be_fetched(self):
-     query = "select * from stocks_payload"
-     stock_list = self.db.execute(query).fetchall()
-     return stock_list
+  def get_stocks_to_be_fetched(self, skip_last_hours=1):
+    print(f"Getting stocks to be fetched. Skipping last {skip_last_hours} hours.")
+    query = f"select * from stocks_payload sp left join stocks s on s.ticker=sp.ticker where fetch_date < datetime('now', '-{skip_last_hours} hours') or fetch_date is null"
+    stock_list = self.db.execute(query).fetchall()
+    return stock_list
 
 
   def setValueForFieldWithName(self, table_name, ticker, field, value):

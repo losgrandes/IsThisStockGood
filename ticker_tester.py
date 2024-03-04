@@ -2,6 +2,8 @@
 import sys
 import logging
 import os
+import json
+#sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'IsThisStockGood'))
 from IsThisStockGood.src.DataFetcher import fetchDataForTickerSymbol
 logging.basicConfig(level=logging.DEBUG)
 

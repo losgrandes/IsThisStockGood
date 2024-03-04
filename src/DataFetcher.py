@@ -4,7 +4,7 @@ import sys
 import src.RuleOneInvestingCalculations as RuleOne
 from requests_futures.sessions import FuturesSession
 from requests import Session
-from src.DataProviders.MSNMoney import MSNMoneyKeyRatios, MSNMoneyKeyStats
+from src.DataProviders.MSNMoney import MSNMoneyKeyRatios, MSNMoneyKeyStats, MSNQuote
 from src.DataProviders.StockRow import StockRowKeyStats, StockRowPrice, StockRowName
 from src.DataProviders.YahooFinance import YahooFinanceQuote,\
 YahooFinanceQuoteSummary, YahooFinanceQuoteSummaryModule,\
@@ -46,13 +46,15 @@ def fetchDataForTickerSymbol(ticker, exchange=None):
   # the json results.
   data_fetcher.fetch_yahoo_ticker()
   data_fetcher.fetch_with_autocomplete(MSNMoneyKeyStats(data_fetcher.ticker_symbol))
-  data_fetcher.fetch(YahooFinanceQuote(data_fetcher.yahoo_autocomplete.ticker_symbol))
   data_fetcher.fetch_with_autocomplete(MSNMoneyKeyRatios(data_fetcher.ticker_symbol))
+  data_fetcher.fetch_with_autocomplete(MSNQuote(data_fetcher.ticker_symbol))
+  data_fetcher.fetch(YahooFinanceQuote(data_fetcher.yahoo_autocomplete.ticker_symbol))
   data_fetcher.fetch(YahooFinanceQuoteSummary(data_fetcher.yahoo_autocomplete.ticker_symbol))
   if data_fetcher.exchange in ('NMS','NYQ'):
-    data_fetcher.fetch(StockRowKeyStats(data_fetcher.ticker_symbol))
-    data_fetcher.fetch(StockRowPrice(data_fetcher.ticker_symbol))
-    data_fetcher.fetch(StockRowName(data_fetcher.ticker_symbol))
+    pass
+    #data_fetcher.fetch(StockRowKeyStats(data_fetcher.ticker_symbol))
+    #data_fetcher.fetch(StockRowPrice(data_fetcher.ticker_symbol))
+    #data_fetcher.fetch(StockRowName(data_fetcher.ticker_symbol))
   # Wait for each RPC result before proceeding.
   for rpc in data_fetcher.rpcs:
     rpc.result()
@@ -182,6 +184,8 @@ class DataFetcher():
     self.sources.append(module)
     self.lock.release()
     session = self._create_session()
+    if module.get_headers():
+      session.headers.update(module.get_headers())
     rpc = session.get(module.get_url(), allow_redirects=True, hooks={
        'response': [self.parse(module=module)],
     })
@@ -214,7 +218,10 @@ class DataFetcher():
     def _parse(response, *request_args, **request_kwargs):
       if response.status_code != 200:
         return
-      success = factory_kwargs['module'].parse(response.text)
+      try:
+        success = factory_kwargs['module'].parse(response.text)
+      except Exception:
+        return None
       return None
     return _parse
 

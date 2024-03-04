@@ -21,6 +21,10 @@ class Base:
         self.pe_low = None
         self.eps_ttm = None
         self.summary = None
+        self.current_price = None
 
     def get_url(self, ticker_symbol=None):
         return self.URL_TEMPLATE.format(ticker_symbol or self.ticker_symbol)
+
+    def get_headers(self):
+        return self.HEADERS or {}

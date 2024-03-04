@@ -28,7 +28,10 @@ class YahooFinanceQuote(Base):
   # Expects the ticker symbol as the only argument.
   # This can theoretically request multiple comma-separated symbols.
   # This could theoretically be trimmed down by using `fields=` parameter.
-  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols={}' 
+  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v7/finance/quote?symbols={}&crumb=I5tk0M/.aU1'
+  HEADERS = {
+    'Cookie': "GUC=AQABCAFl2lxmCUIdXgRo&s=AQAAAO9SKe8M&g=ZdkWCA; A1=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ; A3=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ; cmp=t=1709241055&j=1&u=1---&v=15; PRF=t%3DANET%252BAKAM%26newChartbetateaser%3D1; EuConsent=CP6bsAAP6bsAAAOACKENApEgAAAAAAAAACiQAAAAAAAA; A1S=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ"
+  } 
 
   def parse(self, content, *args, **kwargs):
     data = json.loads(content)
@@ -104,8 +107,10 @@ class YahooFinanceQuoteSummaryModule(Enum):
 class YahooFinanceQuoteSummary(Base):
   # Expects the ticker symbol as the first format string, and a comma-separated list
   # of `QuotesummaryModules` strings for the second argument.
-  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/{}?modules={}'
-
+  URL_TEMPLATE = 'https://query1.finance.yahoo.com/v10/finance/quoteSummary/{}?modules={}&crumb=I5tk0M/.aU1'
+  HEADERS = {
+    'Cookie': "GUC=AQABCAFl2lxmCUIdXgRo&s=AQAAAO9SKe8M&g=ZdkWCA; A1=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ; A3=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ; cmp=t=1709241055&j=1&u=1---&v=15; PRF=t%3DANET%252BAKAM%26newChartbetateaser%3D1; EuConsent=CP6bsAAP6bsAAAOACKENApEgAAAAAAAAACiQAAAAAAAA; A1S=d=AQABBP4V2WUCEM4K8ATJVNHBrxFMGKpODv0FEgABCAFc2mUJZu-bb2UBAiAAAAcI-hXZZYlifGg&S=AQAAAhS2F7cp4fVj56u1G6VqibQ"
+  } 
   # A list of modules that can be used inside of `QUOTE_SUMMARY_URL_TEMPLATE`.
   # These should be passed as a comma-separated list.
   _MODULES = {
@@ -146,8 +151,8 @@ class YahooFinanceQuoteSummary(Base):
   ]
 
   def get_url(self, ticker_symbol=None):
-    modulesString = self._construct_modules_string(self.modules or self.ticker_symbol)
-    return self.URL_TEMPLATE.format(ticker_symbol, modulesString)
+    modulesString = self._construct_modules_string(self.modules)
+    return self.URL_TEMPLATE.format(ticker_symbol or self.ticker_symbol, modulesString)
 
   # A helper method to return a formatted modules string.
   @classmethod
